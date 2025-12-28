@@ -5,7 +5,7 @@ import pandas as pd
 import google.generativeai as genai
 import os
 
-genai.configure(api_key="AIzaSyAk3_7__NmifgO0uVwiSCLrAUgbSwHCdGQ")
+genai.configure(api_key="AIzaSyBNloluZHKCj_e4qiZWsHZqBWzKQfmelaQ")
 
 
 # ==========================================================
