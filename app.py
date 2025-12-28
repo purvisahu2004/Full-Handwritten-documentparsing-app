@@ -1,35 +1,47 @@
 import streamlit as st
-import json
+import pandas as pd
 from handwritten_pipeline import (
     extract_employee_form_json,
-    normalize_employee_json
+    normalize_employee_json,
+    append_to_excel
 )
 
-PDF_PATH = "Employee_Information_Form.pdf"
+st.set_page_config(page_title="Handwritten Form Extraction", layout="wide")
 
-st.set_page_config(page_title="Handwritten Form Extraction", layout="centered")
+st.title("📝 Handwritten Form Extraction System")
+st.write("Upload multiple handwritten employee forms.")
 
-st.title("📝 Handwritten Employee Form Extraction")
-st.write("AI-based document parsing using Gemini Vision")
+uploaded_files = st.file_uploader(
+    "Upload Handwritten Form PDFs",
+    type=["pdf"],
+    accept_multiple_files=True
+)
 
-st.info(f"Using file: `{PDF_PATH}`")
+if uploaded_files:
+    all_rows = []
 
-if st.button("🚀 Extract & Convert to Digital Data"):
-    with st.spinner("Processing handwritten form..."):
-        raw_data = extract_employee_form_json(PDF_PATH)
-        final_data = normalize_employee_json(raw_data)
+    if st.button("🚀 Process Forms"):
+        with st.spinner("Processing forms..."):
+            for file in uploaded_files:
+                with open(file.name, "wb") as f:
+                    f.write(file.getbuffer())
 
-    if not final_data:
-        st.error("Extraction failed.")
-    else:
-        st.success("Extraction completed successfully!")
+                raw = extract_employee_form_json(file.name)
+                normalized = normalize_employee_json(raw)
+                all_rows.append(normalized)
 
-        st.subheader("📦 Final Industrial-Level JSON")
-        st.json(final_data)
+                append_to_excel(normalized)
 
-        st.download_button(
-            label="⬇ Download JSON",
-            data=json.dumps(final_data, indent=4),
-            file_name="employee_data.json",
-            mime="application/json"
-        )
+        st.success("✅ All forms processed and saved to Excel!")
+
+        df = pd.DataFrame(all_rows)
+
+        st.subheader("📊 Extracted Data")
+        st.dataframe(df)
+
+        with open("output.xlsx", "rb") as f:
+            st.download_button(
+                "⬇ Download Excel File",
+                f,
+                file_name="employee_data.xlsx"
+            )

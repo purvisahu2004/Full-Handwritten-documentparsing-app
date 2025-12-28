@@ -1,17 +1,15 @@
 import json
 import re
 from datetime import datetime
+import pandas as pd
 import google.generativeai as genai
+import os
+
+genai.configure(api_key="AIzaSyAk3_7__NmifgO0uVwiSCLrAUgbSwHCdGQ")
 
 
 # ==========================================================
-# GEMINI CONFIG
-# ==========================================================
-genai.configure(api_key="AIzaSyBmF2snZNrrRnkJpwdLOI0kRhNoM6kebXg")
-
-
-# ==========================================================
-# HANDWRITTEN OCR + AUTO JSON EXTRACTION
+# EXTRACTION
 # ==========================================================
 def extract_employee_form_json(pdf_path: str) -> dict:
     uploaded = genai.upload_file(pdf_path)
@@ -22,20 +20,12 @@ def extract_employee_form_json(pdf_path: str) -> dict:
         """
         You are given a scanned handwritten Employee Information Form.
 
-        TASK:
-        - Read printed labels and handwritten values.
-        - Infer snake_case field names.
-        - Group related fields logically.
-        - Return ONLY valid JSON.
-        - No explanations, no markdown.
+        Extract employee details such as:
+        first_name, last_name, date_of_birth, phone_number, email,
+        address, position, emergency contact.
 
-        Expected structure:
-        {
-          "employee": {...},
-          "contact": {...},
-          "job_details": {...},
-          "emergency_contact": {...}
-        }
+        Use snake_case keys.
+        Return ONLY valid JSON.
         """
     ])
 
@@ -49,51 +39,48 @@ def extract_employee_form_json(pdf_path: str) -> dict:
 
 
 # ==========================================================
-# NORMALIZATION (INDUSTRIAL LEVEL)
+# NORMALIZATION
 # ==========================================================
 def normalize_employee_json(data: dict) -> dict:
-    def normalize_date(d):
-        try:
-            return datetime.strptime(d, "%m/%d/%Y").date().isoformat()
-        except:
-            return d
 
     def clean_phone(p):
-        return re.sub(r"\D", "", p)
+        return re.sub(r"\D", "", p) if p else ""
 
-    normalized = {}
+    def normalize_date(d):
+        for fmt in ("%m/%d/%Y", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(d, fmt).date().isoformat()
+            except:
+                pass
+        return d
 
-    # Employee
-    emp = data.get("employee", {})
-    normalized["employee"] = {
-        "first_name": emp.get("first_name", "").strip(),
-        "last_name": emp.get("last_name", "").strip(),
-        "date_of_birth": normalize_date(emp.get("date_of_birth", "")),
-        "ssn": emp.get("ssn", ""),
-        "start_date": normalize_date(emp.get("start_date", "")),
-        "signature_name": emp.get("signature_name", "")
-    }
-
-    # Contact
-    con = data.get("contact", {})
-    normalized["contact"] = {
-        "email": con.get("email", "").lower(),
-        "phone_number": clean_phone(con.get("phone_number", "")),
-        "address": con.get("address", {})
-    }
-
-    # Job
-    job = data.get("job_details", {})
-    normalized["job_details"] = {
-        "position": job.get("position", "").lower().replace(" ", "_")
-    }
-
-    # Emergency Contact
-    ec = data.get("emergency_contact", {})
-    normalized["emergency_contact"] = {
-        "name": ec.get("name", ""),
-        "relationship": ec.get("relationship", "").lower(),
-        "phone": clean_phone(ec.get("phone", ""))
+    normalized = {
+        "first_name": data.get("first_name", ""),
+        "last_name": data.get("last_name", ""),
+        "date_of_birth": normalize_date(data.get("date_of_birth", "")),
+        "email": data.get("email", "").lower(),
+        "phone_number": clean_phone(data.get("phone_number", "")),
+        "position": data.get("position", "").lower(),
+        "emergency_contact_name": data.get("emergency_contact_name", ""),
+        "emergency_contact_phone": clean_phone(
+            data.get("emergency_contact_phone", "")
+        )
     }
 
     return normalized
+
+
+# ==========================================================
+# SAVE / APPEND TO EXCEL
+# ==========================================================
+def append_to_excel(data: dict, filename="output.xlsx"):
+    df_new = pd.DataFrame([data])
+
+    if os.path.exists(filename):
+        df_existing = pd.read_excel(filename)
+        df_final = pd.concat([df_existing, df_new], ignore_index=True)
+    else:
+        df_final = df_new
+
+    df_final.to_excel(filename, index=False)
+    return df_final
