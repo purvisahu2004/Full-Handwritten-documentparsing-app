@@ -1,4 +1,5 @@
 import streamlit as st
+import time
 import pandas as pd
 from handwritten_pipeline import (
     extract_employee_form_json,
@@ -9,39 +10,52 @@ from handwritten_pipeline import (
 st.set_page_config(page_title="Handwritten Form Extraction", layout="wide")
 
 st.title("📝 Handwritten Form Extraction System")
-st.write("Upload multiple handwritten employee forms.")
+st.write("Upload handwritten employee forms and convert them into Excel data.")
 
 uploaded_files = st.file_uploader(
-    "Upload Handwritten Form PDFs",
+    "Upload Handwritten PDF Forms (Max 3)",
     type=["pdf"],
     accept_multiple_files=True
 )
 
-if uploaded_files:
-    all_rows = []
+# LIMIT FILES TO AVOID QUOTA ISSUES
+if uploaded_files and len(uploaded_files) > 3:
+    st.warning("Please upload a maximum of 3 files at a time (API limit).")
+    st.stop()
 
+if uploaded_files:
     if st.button("🚀 Process Forms"):
-        with st.spinner("Processing forms..."):
+        all_rows = []
+
+        with st.spinner("Processing handwritten forms..."):
             for file in uploaded_files:
+                # Save file locally
                 with open(file.name, "wb") as f:
                     f.write(file.getbuffer())
 
-                raw = extract_employee_form_json(file.name)
-                normalized = normalize_employee_json(raw)
+                # AI extraction
+                raw_data = extract_employee_form_json(file.name)
+
+                # Normalization
+                normalized = normalize_employee_json(raw_data)
                 all_rows.append(normalized)
 
+                # Append to Excel
                 append_to_excel(normalized)
 
-        st.success("✅ All forms processed and saved to Excel!")
+                # RATE LIMITING (VERY IMPORTANT)
+                time.sleep(2)
 
         df = pd.DataFrame(all_rows)
 
-        st.subheader("📊 Extracted Data")
-        st.dataframe(df)
+        st.success("✅ Forms processed successfully!")
 
-        with open("output.xlsx", "rb") as f:
+        st.subheader("📊 Extracted Data (Tabular View)")
+        st.dataframe(df, use_container_width=True)
+
+        with open("employee_output.xlsx", "rb") as f:
             st.download_button(
                 "⬇ Download Excel File",
                 f,
-                file_name="employee_data.xlsx"
+                file_name="employee_output.xlsx"
             )
