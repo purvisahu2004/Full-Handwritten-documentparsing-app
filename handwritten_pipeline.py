@@ -3,29 +3,42 @@ import re
 from datetime import datetime
 import pandas as pd
 import google.generativeai as genai
-import os
+import streamlit as st
 
+# ==========================================================
+# GEMINI CONFIG
+# ==========================================================
 genai.configure(api_key="AIzaSyDO0Yw1jsHrRMrGzrORcjGfLjHZv5W5rQA")
 
 
 # ==========================================================
-# EXTRACTION
+# GEMINI FILE UPLOAD (CACHED)
 # ==========================================================
-def extract_employee_form_json(pdf_path: str) -> dict:
-    uploaded = genai.upload_file(pdf_path)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+@st.cache_resource(show_spinner=False)
+def upload_file_once(file_path: str):
+    return genai.upload_file(file_path)
+
+
+# ==========================================================
+# HANDWRITTEN EXTRACTION (CACHED)
+# ==========================================================
+@st.cache_data(show_spinner=False)
+def extract_employee_form_json(file_path: str) -> dict:
+    uploaded = upload_file_once(file_path)
+    model = genai.GenerativeModel("gemini-2.5-flash-lite")
 
     response = model.generate_content([
         uploaded,
         """
         You are given a scanned handwritten Employee Information Form.
 
-        Extract employee details such as:
+        Extract all readable information such as:
         first_name, last_name, date_of_birth, phone_number, email,
         address, position, emergency contact.
 
         Use snake_case keys.
         Return ONLY valid JSON.
+        No explanation.
         """
     ])
 
@@ -47,14 +60,14 @@ def normalize_employee_json(data: dict) -> dict:
         return re.sub(r"\D", "", p) if p else ""
 
     def normalize_date(d):
-        for fmt in ("%m/%d/%Y", "%Y-%m-%d"):
+        for fmt in ("%m/%d/%Y", "%d/%m/%Y", "%Y-%m-%d"):
             try:
                 return datetime.strptime(d, fmt).date().isoformat()
             except:
                 pass
         return d
 
-    normalized = {
+    return {
         "first_name": data.get("first_name", ""),
         "last_name": data.get("last_name", ""),
         "date_of_birth": normalize_date(data.get("date_of_birth", "")),
@@ -67,20 +80,19 @@ def normalize_employee_json(data: dict) -> dict:
         )
     }
 
-    return normalized
-
 
 # ==========================================================
-# SAVE / APPEND TO EXCEL
+# APPEND TO EXCEL (MULTIPLE ROWS)
 # ==========================================================
-def append_to_excel(data: dict, filename="output.xlsx"):
+def append_to_excel(data: dict, filename="employee_output.xlsx"):
     df_new = pd.DataFrame([data])
 
-    if os.path.exists(filename):
+    try:
         df_existing = pd.read_excel(filename)
         df_final = pd.concat([df_existing, df_new], ignore_index=True)
-    else:
+    except FileNotFoundError:
         df_final = df_new
 
     df_final.to_excel(filename, index=False)
     return df_final
+
