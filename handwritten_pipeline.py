@@ -1,88 +1,79 @@
-import json
 import re
-from datetime import datetime
 import pandas as pd
-import google.generativeai as genai
-import streamlit as st
+from datetime import datetime
 
 # ==========================================================
-# GEMINI CONFIG
+# 🔴 DEMO MODE FLAG
 # ==========================================================
-genai.configure(api_key="AIzaSyDO0Yw1jsHrRMrGzrORcjGfLjHZv5W5rQA")
-
-
-# ==========================================================
-# GEMINI FILE UPLOAD (CACHED)
-# ==========================================================
-@st.cache_resource(show_spinner=False)
-def upload_file_once(file_path: str):
-    return genai.upload_file(file_path)
+# True  → Cloud / Presentation / Demo (NO API CALLS)
+# False → Local machine with Gemini API
+DEMO_MODE = True
 
 
 # ==========================================================
-# HANDWRITTEN EXTRACTION (CACHED)
+# HANDWRITTEN EXTRACTION (DEMO / REAL SWITCH)
 # ==========================================================
-@st.cache_data(show_spinner=False)
 def extract_employee_form_json(file_path: str) -> dict:
-    uploaded = upload_file_once(file_path)
-    model = genai.GenerativeModel("gemini-2.5-flash-lite")
+    """
+    In DEMO_MODE:
+        Returns mock extracted data (simulates Gemini OCR output)
+    In REAL mode:
+        Gemini OCR logic can be added later
+    """
 
-    response = model.generate_content([
-        uploaded,
-        """
-        You are given a scanned handwritten Employee Information Form.
+    if DEMO_MODE:
+        # 🔹 MOCK DATA (REALISTIC HANDWRITTEN OUTPUT)
+        return {
+            "first_name": "John",
+            "last_name": "Doe",
+            "date_of_birth": "03/15/1985",
+            "email": "john.doe@email.com",
+            "phone_number": "(217) 555-7890",
+            "position": "Sales Associate",
+            "emergency_contact_name": "Jane Doe",
+            "emergency_contact_phone": "(217) 555-1234"
+        }
 
-        Extract all readable information such as:
-        first_name, last_name, date_of_birth, phone_number, email,
-        address, position, emergency contact.
-
-        Use snake_case keys.
-        Return ONLY valid JSON.
-        No explanation.
-        """
-    ])
-
-    raw = (response.text or "").strip()
-
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
-        return json.loads(match.group(0)) if match else {}
+    # ------------------------------------------------------
+    # REAL GEMINI LOGIC (USE ONLY LOCALLY)
+    # ------------------------------------------------------
+    raise RuntimeError(
+        "REAL MODE disabled in demo. Set DEMO_MODE=False to enable Gemini."
+    )
 
 
 # ==========================================================
-# NORMALIZATION
+# NORMALIZATION (INDUSTRIAL LEVEL)
 # ==========================================================
 def normalize_employee_json(data: dict) -> dict:
 
-    def clean_phone(p):
-        return re.sub(r"\D", "", p) if p else ""
+    def clean_phone(phone):
+        return re.sub(r"\D", "", phone) if phone else ""
 
     def normalize_date(d):
-        for fmt in ("%m/%d/%Y", "%d/%m/%Y", "%Y-%m-%d"):
-            try:
-                return datetime.strptime(d, fmt).date().isoformat()
-            except:
-                pass
-        return d
+        try:
+            return datetime.strptime(d, "%m/%d/%Y").date().isoformat()
+        except:
+            return d
 
-    return {
+    normalized = {
         "first_name": data.get("first_name", ""),
         "last_name": data.get("last_name", ""),
         "date_of_birth": normalize_date(data.get("date_of_birth", "")),
         "email": data.get("email", "").lower(),
         "phone_number": clean_phone(data.get("phone_number", "")),
-        "position": data.get("position", "").lower(),
+        "position": data.get("position", "").lower().replace(" ", "_"),
         "emergency_contact_name": data.get("emergency_contact_name", ""),
         "emergency_contact_phone": clean_phone(
             data.get("emergency_contact_phone", "")
         )
     }
 
+    return normalized
+
 
 # ==========================================================
-# APPEND TO EXCEL (MULTIPLE ROWS)
+# APPEND MULTIPLE ROWS TO EXCEL
 # ==========================================================
 def append_to_excel(data: dict, filename="employee_output.xlsx"):
     df_new = pd.DataFrame([data])
