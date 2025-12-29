@@ -1,60 +1,58 @@
+import json
 import re
-import pandas as pd
 from datetime import datetime
+import pandas as pd
+import google.generativeai as genai
+import os
 
-# ==========================================================
-# 🔴 DEMO MODE FLAG
-# ==========================================================
-# True  → Cloud / Presentation / Demo (NO API CALLS)
-# False → Local machine with Gemini API
-DEMO_MODE = True
+genai.configure(api_key="AIzaSyDr4972UCNvTnxGlLw7PNpoVkfNTvBAFoU")
 
 
 # ==========================================================
-# HANDWRITTEN EXTRACTION (DEMO / REAL SWITCH)
+# EXTRACTION
 # ==========================================================
-def extract_employee_form_json(file_path: str) -> dict:
-    """
-    In DEMO_MODE:
-        Returns mock extracted data (simulates Gemini OCR output)
-    In REAL mode:
-        Gemini OCR logic can be added later
-    """
+def extract_employee_form_json(pdf_path: str) -> dict:
+    uploaded = genai.upload_file(pdf_path)
+    model = genai.GenerativeModel("gemini-2.5-flash-lite")
 
-    if DEMO_MODE:
-        # 🔹 MOCK DATA (REALISTIC HANDWRITTEN OUTPUT)
-        return {
-            "first_name": "John",
-            "last_name": "Doe",
-            "date_of_birth": "03/15/1985",
-            "email": "john.doe@email.com",
-            "phone_number": "(217) 555-7890",
-            "position": "Sales Associate",
-            "emergency_contact_name": "Jane Doe",
-            "emergency_contact_phone": "(217) 555-1234"
-        }
+    response = model.generate_content([
+        uploaded,
+        """
+        You are given a scanned handwritten Employee Information Form.
 
-    # ------------------------------------------------------
-    # REAL GEMINI LOGIC (USE ONLY LOCALLY)
-    # ------------------------------------------------------
-    raise RuntimeError(
-        "REAL MODE disabled in demo. Set DEMO_MODE=False to enable Gemini."
-    )
+        Extract employee details such as:
+        first_name, last_name, date_of_birth, phone_number, email,
+        address, position, emergency contact.
+
+        Use snake_case keys.
+        Return ONLY valid JSON.
+        """
+    ])
+
+    raw = (response.text or "").strip()
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+        return json.loads(match.group(0)) if match else {}
 
 
 # ==========================================================
-# NORMALIZATION (INDUSTRIAL LEVEL)
+# NORMALIZATION
 # ==========================================================
 def normalize_employee_json(data: dict) -> dict:
 
-    def clean_phone(phone):
-        return re.sub(r"\D", "", phone) if phone else ""
+    def clean_phone(p):
+        return re.sub(r"\D", "", p) if p else ""
 
     def normalize_date(d):
-        try:
-            return datetime.strptime(d, "%m/%d/%Y").date().isoformat()
-        except:
-            return d
+        for fmt in ("%m/%d/%Y", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(d, fmt).date().isoformat()
+            except:
+                pass
+        return d
 
     normalized = {
         "first_name": data.get("first_name", ""),
@@ -62,7 +60,7 @@ def normalize_employee_json(data: dict) -> dict:
         "date_of_birth": normalize_date(data.get("date_of_birth", "")),
         "email": data.get("email", "").lower(),
         "phone_number": clean_phone(data.get("phone_number", "")),
-        "position": data.get("position", "").lower().replace(" ", "_"),
+        "position": data.get("position", "").lower(),
         "emergency_contact_name": data.get("emergency_contact_name", ""),
         "emergency_contact_phone": clean_phone(
             data.get("emergency_contact_phone", "")
@@ -73,15 +71,15 @@ def normalize_employee_json(data: dict) -> dict:
 
 
 # ==========================================================
-# APPEND MULTIPLE ROWS TO EXCEL
+# SAVE / APPEND TO EXCEL
 # ==========================================================
-def append_to_excel(data: dict, filename="employee_output.xlsx"):
+def append_to_excel(data: dict, filename="output.xlsx"):
     df_new = pd.DataFrame([data])
 
-    try:
+    if os.path.exists(filename):
         df_existing = pd.read_excel(filename)
         df_final = pd.concat([df_existing, df_new], ignore_index=True)
-    except FileNotFoundError:
+    else:
         df_final = df_new
 
     df_final.to_excel(filename, index=False)
