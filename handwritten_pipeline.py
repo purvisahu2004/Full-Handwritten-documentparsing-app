@@ -13,7 +13,7 @@ genai.configure(api_key="AIzaSyDO0Yw1jsHrRMrGzrORcjGfLjHZv5W5rQA")
 # ==========================================================
 def extract_employee_form_json(pdf_path: str) -> dict:
     uploaded = genai.upload_file(pdf_path)
-    model = genai.GenerativeModel("gemini-2.5-flash-lite")
+    model = genai.GenerativeModel("gemini-1.5-flash")
 
     response = model.generate_content([
         uploaded,
