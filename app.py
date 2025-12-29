@@ -1,21 +1,19 @@
 import streamlit as st
 import pandas as pd
+from io import BytesIO
 from handwritten_pipeline import (
     extract_employee_form_json,
-    normalize_employee_json,
-    append_to_excel
+    normalize_employee_json
 )
 
-st.set_page_config(
-    page_title="Handwritten Form Extraction",
-    layout="wide"
-)
+st.set_page_config(page_title="Handwritten Form Extraction", layout="wide")
 
 st.title("📝 Handwritten Form Extraction System")
-st.write(
-    "This application converts handwritten employee forms into "
-    "structured digital data and Excel format."
-)
+st.write("handwritten document parsing")
+
+# 🔹 Session state to store rows across reruns
+if "table_data" not in st.session_state:
+    st.session_state.table_data = []
 
 uploaded_files = st.file_uploader(
     "Upload Handwritten PDF Forms (Demo Mode)",
@@ -23,29 +21,29 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-if uploaded_files:
-    if st.button("🚀 Process Forms"):
-        all_rows = []
+if uploaded_files and st.button("🚀 Process Forms"):
+    for file in uploaded_files:
+        raw = extract_employee_form_json(file.name)
+        normalized = normalize_employee_json(raw)
+        st.session_state.table_data.append(normalized)
 
-        with st.spinner("Processing handwritten forms..."):
-            for file in uploaded_files:
-                # 🔹 DEMO: no need to save file
-                raw_data = extract_employee_form_json(file.name)
-                normalized = normalize_employee_json(raw_data)
-                all_rows.append(normalized)
-                append_to_excel(normalized)
+    st.success("✅ Forms processed successfully!")
 
-        df = pd.DataFrame(all_rows)
+# 🔹 Display table if data exists
+if st.session_state.table_data:
+    df = pd.DataFrame(st.session_state.table_data)
 
-        st.success("✅ Forms processed successfully!")
+    st.subheader("📊 Extracted Employee Data")
+    st.dataframe(df, use_container_width=True)
 
-        st.subheader("📊 Extracted Employee Data")
-        st.dataframe(df, use_container_width=True)
+    # 🔹 Create Excel IN MEMORY
+    excel_buffer = BytesIO()
+    df.to_excel(excel_buffer, index=False)
+    excel_buffer.seek(0)
 
-        with open("employee_output.xlsx", "rb") as f:
-            st.download_button(
-                label="⬇ Download Excel File",
-                data=f,
-                file_name="employee_output.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+    st.download_button(
+        label="⬇ Download Excel File",
+        data=excel_buffer,
+        file_name="employee_output.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
