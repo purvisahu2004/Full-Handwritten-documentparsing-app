@@ -1,49 +1,47 @@
 import streamlit as st
 import pandas as pd
-from io import BytesIO
 from handwritten_pipeline import (
     extract_employee_form_json,
-    normalize_employee_json
+    normalize_employee_json,
+    append_to_excel
 )
 
 st.set_page_config(page_title="Handwritten Form Extraction", layout="wide")
 
 st.title("📝 Handwritten Form Extraction System")
-st.write("handwritten document parsing")
-
-# 🔹 Session state to store rows across reruns
-if "table_data" not in st.session_state:
-    st.session_state.table_data = []
+st.write("Upload multiple handwritten employee forms and convert them to digital data.")
 
 uploaded_files = st.file_uploader(
-    "Upload Handwritten PDF Forms (Demo Mode)",
+    "Upload Handwritten Form PDFs",
     type=["pdf"],
     accept_multiple_files=True
 )
 
-if uploaded_files and st.button("🚀 Process Forms"):
-    for file in uploaded_files:
-        raw = extract_employee_form_json(file.name)
-        normalized = normalize_employee_json(raw)
-        st.session_state.table_data.append(normalized)
+if uploaded_files:
+    all_rows = []
 
-    st.success("✅ Forms processed successfully!")
+    if st.button("🚀 Process Forms"):
+        with st.spinner("Processing forms..."):
+            for file in uploaded_files:
+                with open(file.name, "wb") as f:
+                    f.write(file.getbuffer())
 
-# 🔹 Display table if data exists
-if st.session_state.table_data:
-    df = pd.DataFrame(st.session_state.table_data)
+                raw = extract_employee_form_json(file.name)
+                normalized = normalize_employee_json(raw)
+                all_rows.append(normalized)
 
-    st.subheader("📊 Extracted Employee Data")
-    st.dataframe(df, use_container_width=True)
+                append_to_excel(normalized)
 
-    # 🔹 Create Excel IN MEMORY
-    excel_buffer = BytesIO()
-    df.to_excel(excel_buffer, index=False)
-    excel_buffer.seek(0)
+        st.success("✅ All forms processed and saved to Excel!")
 
-    st.download_button(
-        label="⬇ Download Excel File",
-        data=excel_buffer,
-        file_name="employee_output.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        df = pd.DataFrame(all_rows)
+
+        st.subheader("📊 Extracted Data (Tabular View)")
+        st.dataframe(df)
+
+        with open("output.xlsx", "rb") as f:
+            st.download_button(
+                "⬇ Download Excel File",
+                f,
+                file_name="employee_data.xlsx"
+            )
